@@ -22,5 +22,7 @@ jobs:
         run: npm ci
       - name: Type-check
         run: npm run check
+      - name: Ordering regression tests
+        run: npm test
       - name: Build frontend
         run: npm run build
