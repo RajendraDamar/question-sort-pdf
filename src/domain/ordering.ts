@@ -16,10 +16,12 @@ export interface NumberingReport {
 
 export function sortByQuestionNumber<T extends NumberedPage>(pages: T[]): T[] {
   return [...pages].sort((a, b) => {
-    if (a.questionNumber === null && b.questionNumber === null) return a.originalIndex - b.originalIndex;
+    if (a.questionNumber === null && b.questionNumber === null) return 0;
     if (a.questionNumber === null) return 1;
     if (b.questionNumber === null) return -1;
-    return a.questionNumber - b.questionNumber || a.originalIndex - b.originalIndex;
+    // JavaScript sorting is stable: equal question numbers retain the
+    // user's current order, including manually arranged continuation pages.
+    return a.questionNumber - b.questionNumber;
   });
 }
 

@@ -1,4 +1,4 @@
-name: Frontend checks
+name: Pemeriksaan QuestionSort PDF
 
 on:
   push:
@@ -9,20 +9,46 @@ permissions:
 
 jobs:
   frontend:
+    name: Pemeriksaan antarmuka
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
+      - name: Ambil kode sumber
         uses: actions/checkout@v4
-      - name: Set up Node
+      - name: Siapkan Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies
+      - name: Pasang dependensi antarmuka
         run: npm ci
-      - name: Type-check
+      - name: Periksa tipe TypeScript
         run: npm run check
-      - name: Ordering regression tests
+      - name: Tes pengurutan
         run: npm test
-      - name: Build frontend
+      - name: Buat build antarmuka
         run: npm run build
+
+  native:
+    name: Tes mesin native, OCR, dan PDF
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Ambil kode sumber
+        uses: actions/checkout@v4
+      - name: Pasang dependensi sistem
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential curl file libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libwebkit2gtk-4.1-dev poppler-utils \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-ind
+      - name: Siapkan Rust stabil
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format Rust
+        working-directory: src-tauri
+        run: cargo fmt --check
+      - name: Tes OCR dan PDF
+        working-directory: src-tauri
+        run: cargo test

@@ -1,60 +1,62 @@
-# Roadmap and acceptance criteria
+# Peta jalan dan kriteria penerimaan
 
-## Phase 0 — Foundation scaffold
+## Fase 0 — Fondasi
 
-- [x] Tauri 2 + vanilla TypeScript scaffold
-- [x] Responsive GUI foundation
-- [x] Batch image import, thumbnails, manual numbering, stable numeric sorting, and reorder controls
-- [x] Warnings for unassigned numbers, duplicates, and possible gaps
-- [x] Original images remain untouched
-- [ ] Native app compile verified on target OSes
-- [ ] OCR, persistence, and PDF export implemented
+- [x] Tauri 2 + TypeScript tanpa framework UI
+- [x] Antarmuka responsif dalam Bahasa Indonesia
+- [x] Impor gambar batch, pratinjau, pengisian nomor manual, pengurutan numerik, dan kontrol pemindahan
+- [x] Peringatan nomor kosong, nomor ganda, dan celah yang mungkin
+- [x] Foto sumber tetap utuh
+- [x] Dialog sistem untuk memilih gambar dan tujuan ekspor
+- [x] OCR Tesseract lokal terhubung
+- [x] Pembuat PDF native dan tes pembacaan PDF
+- [x] Shortcut desktop lokal tersedia
+- [ ] Penyimpanan proyek yang dapat dibuka kembali
 
-## Phase 1 — Import and project model
+## Fase 1 — Model proyek
 
-- Support JPG/JPEG, PNG, and WebP.
-- Preserve source name, modification metadata, an optional parsed WhatsApp timestamp, and a cryptographic content hash.
-- Detect identical content independently from filename/size collisions.
-- Add reopenable projects and an auditable manifest.
-- Never rename source files.
+- Simpan nama sumber, metadata perubahan, timestamp WhatsApp jika dapat dikenali dari pola nama berkas, dan hash isi.
+- Bedakan konten duplikat persis dari berkas yang hanya memiliki nama/ukuran sama.
+- Tambahkan proyek yang dapat dibuka kembali dan manifest yang dapat diaudit.
+- Jangan pernah mengganti nama berkas sumber.
 
-**Acceptance:** every input is accounted for exactly once or explicitly excluded; large bundles do not require all full-resolution images to be resident in memory.
+**Penerimaan:** setiap masukan tercatat satu kali atau secara eksplisit dikeluarkan; seluruh gambar beresolusi penuh tidak harus berada di memori bersamaan.
 
-## Phase 2 — Local OCR
+## Fase 2 — OCR lokal
 
-- Benchmark Tesseract using suitable compact models on representative exam photos.
-- Read question numbers using text, location, and surrounding context.
-- Keep raw recognition evidence.
-- Retry with alternate preprocessing only when it adds useful evidence.
-- Validate Indonesian/English accuracy, offline packaging, license, and size before selecting default language data.
+- Benchmark Tesseract pada foto soal nyata, bukan hanya gambar sintetis.
+- Kenali nomor memakai teks, posisi, dan konteks sekitar.
+- Pertahankan bukti OCR mentah serta kandidat alternatif.
+- Ulangi preprocessing hanya jika menambah bukti.
+- Seluruh antarmuka dan petunjuk pengguna menggunakan Bahasa Indonesia.
 
-**Acceptance:** every detection is reproducible and traceable to a source image and text/region evidence.
+**Penerimaan:** kandidat dapat ditelusuri ke gambar sumber dan bukti teks/posisi.
 
-## Phase 3 — Resolution and verification
+## Fase 3 — Verifikasi urutan
 
-- Deterministic numeric ordering is the normal path.
-- Detect duplicates, possible gaps, unreadable labels, unnumbered cover/diagram pages, and likely continuation pages.
-- Add an optional vision model only if benchmark results show a meaningful improvement; never bundle it in the base installer.
-- Provide visual preview, direct correction, and keyboard-accessible manual reorder.
-- Keep final verification closed until flagged ambiguities are resolved by a person.
+- Pengurutan numerik deterministik menjadi jalur utama.
+- Deteksi nomor ganda, kemungkinan celah, nomor tak terbaca, gambar tanpa nomor, dan kemungkinan halaman lanjutan.
+- Pertimbangkan model visi opsional hanya bila benchmark menunjukkan peningkatan yang berarti; jangan bundel model ke installer.
+- Tampilkan pratinjau lengkap dan koreksi langsung.
+- Wajibkan persetujuan eksplisit untuk urutan akhir.
 
-**Acceptance:** model agreement and OCR confidence are never represented as proof of correctness.
+**Penerimaan:** nilai OCR tidak pernah dianggap sebagai bukti mutlak kebenaran.
 
-## Phase 4 — PDF export
+## Fase 4 — Ekspor PDF
 
-- Generate pages in the exact approved sequence.
-- Preserve source image quality where practical; handle orientation and page sizing deliberately.
-- Validate PDF page count and source-to-output mapping.
-- Save to a new destination without overwriting input files.
-- Reopen/inspect the final file before reporting success.
+- Buat halaman sesuai urutan yang ditinjau pengguna.
+- Tangani orientasi dan ukuran halaman secara konsisten.
+- Validasi struktur PDF dan jumlah halaman.
+- Simpan ke tujuan yang dipilih, tanpa menyentuh gambar sumber.
+- Pastikan berkas akhir dapat dibuka kembali.
 
-**Acceptance:** output has a manifest of the approved ordering and a validated export.
+**Penerimaan:** struktur PDF dan jumlah halaman lulus pemeriksaan sebelum aplikasi menyatakan sukses.
 
-## Phase 5 — Packaging and performance
+## Fase 5 — Paket dan performa
 
-- Build release bundles for each target OS.
-- Add reproducible CI and smoke checks.
-- Measure installer size, launch time, idle memory, OCR peak memory, and processing time on a representative bundle.
-- Decide whether to bundle Tesseract or detect a host install based on measured size and ease of use.
+- Buat build rilis untuk setiap sistem operasi sasaran.
+- Jalankan pemeriksaan antarmuka dan tes native melalui CI.
+- Ukur ukuran installer, waktu startup, memori idle, memori puncak OCR, dan waktu pemrosesan batch.
+- Putuskan apakah Tesseract dibundel atau memerlukan pemasangan sistem dengan membandingkan ukuran paket dan kemudahan penggunaan.
 
-**Acceptance:** documented dependencies, tested installation/upgrade path, no unexpected network calls, and passing regression tests.
+**Penerimaan:** artefak rilis teruji, dependensi terdokumentasi, proses instalasi jelas, tidak ada koneksi jaringan yang tidak diharapkan, dan tes regresi lulus.

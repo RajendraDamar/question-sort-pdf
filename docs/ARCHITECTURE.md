@@ -1,61 +1,61 @@
-# Architecture
+# Arsitektur QuestionSort PDF
 
-## Goals
+## Sasaran
 
-1. Keep the install lightweight; do not bundle a vision-language model.
-2. Process exam bundles locally by default.
-3. Separate OCR, ordering, human review, persistence, and PDF creation.
-4. Make uncertainty visible and require review before export.
-5. Preserve source images and map every output page back to its source.
+1. Aplikasi desktop dan pemrosesan tetap ringan.
+2. Pengolahan gambar dilakukan secara lokal, tanpa layanan cloud.
+3. OCR, pengurutan, verifikasi pengguna, dan ekspor PDF dipisahkan.
+4. Ketidakpastian terlihat; aplikasi tidak boleh diam-diam menganggap hasil OCR pasti benar.
+5. Setiap halaman PDF dapat ditelusuri kembali ke gambar sumber.
 
-## Layers
+## Lapisan aplikasi
 
-### Desktop shell
+### Shell desktop
 
-Tauri 2 uses the system WebView and exposes only explicitly registered commands. Permissions should remain narrow; never grant blanket filesystem access.
+Tauri 2 memakai WebView sistem. Hanya perintah native yang didaftarkan secara eksplisit yang dapat dipanggil dari antarmuka. Hak akses sistem harus tetap minimal.
 
-### UI
+### Antarmuka
 
-The src directory uses plain TypeScript, HTML, and semantic CSS. The UI owns transient state and previews but does not decide that a detected number is trustworthy.
+Folder src/ menggunakan TypeScript, HTML, dan CSS biasa tanpa framework UI besar. Bahasa antarmuka utama adalah Bahasa Indonesia. Pratinjau gambar dibuat dengan ukuran kecil untuk menghemat memori.
 
-### Domain logic
+### Logika pengurutan
 
-The src/domain/ordering.ts module implements pure numeric sorting and numbering diagnostics. It intentionally does not use WhatsApp timestamps or filenames as the primary sort key. Timestamps may be retained as supporting metadata.
+Modul src/domain/ordering.ts menjalankan pengurutan numerik deterministik serta pemeriksaan nomor kosong, nomor ganda, dan kemungkinan celah. Nama berkas dan waktu pengiriman WhatsApp hanya metadata pendukung, bukan dasar urutan utama.
 
-### Native services (planned)
+### Layanan native
 
-- **Import:** enumerate supported image files, compute source hashes, and preserve filenames and metadata.
-- **Preprocessing:** use disposable working images for orientation, crop, deskew, or contrast improvements without modifying originals.
-- **OCR:** return candidate question numbers, bounding boxes, engine/language version, and confidence evidence.
-- **Resolver:** apply explicit rules, detect duplicates and possible gaps, and leave unresolved cases unresolved.
-- **Review manifest:** record the approved sequence, corrections, review state, source hash, and provenance.
-- **PDF export:** render from the approved sequence and validate output count and source-to-page mapping.
+- **Pemeriksaan gambar:** validasi jalur, format, ukuran berkas, dan dimensi; buat pratinjau JPEG kecil.
+- **OCR:** menjalankan Tesseract lokal dengan bahasa Indonesia dan Inggris. TSV OCR dipakai untuk mendapatkan teks, posisi, kandidat nomor, dan nilai pengenalan.
+- **Penyelesaian kandidat:** kandidat nomor disusun menurut posisi baca dengan aturan yang eksplisit. Kandidat tetap wajib diperiksa pengguna.
+- **Ekspor PDF:** memproses satu gambar penuh pada satu waktu, mengubah gambar menjadi JPEG yang kompatibel, menulis halaman A4 ke PDF, lalu memvalidasi berkas sebelum menyatakan berhasil.
 
-### Storage (planned)
+### Penyimpanan
 
-Use SQLite for project records and a portable manifest. Avoid storing full-resolution image bytes in the database; do not run a persistent service.
+Status kumpulan gambar saat ini berada di memori selama sesi. Penyimpanan proyek yang dapat dibuka kembali serta manifest ekspor masih menjadi pekerjaan lanjutan. Jangan menyimpan gambar beresolusi penuh ke basis data.
 
-## Ordering contract
+## Kontrak pengurutan
 
-- Compare question numbers numerically (2 comes before 10).
-- Treat missing or ambiguous numbers as unresolved, not zero.
-- Stable-sort duplicates and flag them for human review.
-- A numbering gap is a warning, not proof of a missing page.
-- Cover pages, diagrams, unnumbered pages, and continuation pages need an explicit reviewed placement.
-- Never mark the sequence verified while unresolved decisions remain.
-- Retain source-to-output mapping for every exported page.
+- Bandingkan nomor sebagai angka: 2 mendahului 10.
+- Nomor yang tidak terbaca tetap belum diketahui, bukan dianggap nol.
+- Nomor ganda tetap dalam urutan stabil dan ditandai untuk ditinjau.
+- Celah nomor merupakan peringatan, bukan bukti bahwa gambar hilang.
+- Sampul, diagram, gambar tanpa nomor, serta halaman lanjutan perlu ditempatkan setelah pemeriksaan.
+- Pengguna harus menyatakan sudah memeriksa urutan sebelum ekspor.
+- Jangan menganggap skor OCR atau kesepakatan model sebagai bukti bahwa urutan benar.
 
-## Weight budget
+## Batas ukuran dan memori
 
-- No React/Vue runtime or component framework.
-- No bundled VLM, Ollama, Python runtime, or model server.
-- Prefer one compact OCR engine and only the language data actually required.
-- Process image files incrementally; downsample disposable OCR copies where appropriate.
-- Measure release size, cold start, idle memory, and peak processing memory before claiming a specific footprint.
+- Tidak ada runtime React/Vue, Python, model visi, Ollama, atau server yang selalu berjalan.
+- Gunakan Tesseract dari sistem dan hanya data bahasa yang diperlukan.
+- Pratinjau diturunkan ukurannya.
+- Ekspor PDF memproses halaman satu per satu, bukan memuat semua foto penuh sekaligus.
+- Ukur installer, waktu startup, memori idle, dan memori puncak pada build rilis sebelum menetapkan angka performa.
 
-## Security
+## Keamanan berkas
 
-- Do not store absolute repo paths as durable IDs.
-- Escape filenames before putting them into HTML.
-- Limit Tauri permissions to user-selected import, project, and export locations.
-- Normal processing should not need network access. Any remote model integration must be a separately opted-in future feature.
+- Validasi jalur dan ekstensi gambar di sisi native.
+- Escape nama berkas sebelum memasukkannya ke HTML.
+- Pakai dialog sistem untuk memilih gambar dan tujuan simpan.
+- Gambar sumber tidak diubah nama, ditimpa, atau dihapus.
+- PDF ditulis melalui berkas sementara dan baru dipindahkan ke tujuan setelah berhasil dibuat.
+- Pemrosesan normal tidak membutuhkan akses jaringan.

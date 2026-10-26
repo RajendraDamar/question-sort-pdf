@@ -1,60 +1,71 @@
 # QuestionSort PDF
 
-A lightweight, local-first desktop application for sorting exam images by the question numbers printed on them, reviewing the proposed sequence, and exporting a PDF.
+Aplikasi desktop lokal yang ringan untuk mengurutkan foto soal berdasarkan nomor yang tercetak, memeriksa urutannya, lalu menyimpan kumpulan gambar sebagai PDF.
 
-**Product principle:** OCR proposes; deterministic checks flag inconsistencies; a person verifies ambiguous decisions. The app must never silently claim an uncertain ordering is correct.
+**Prinsip produk:** OCR memberikan usulan; pemeriksaan deterministik menandai ketidakkonsistenan; pengguna memeriksa keputusan yang meragukan. Aplikasi tidak boleh diam-diam menganggap urutan yang belum pasti sebagai benar.
 
-## Project status
+## Status proyek
 
-**Foundation scaffold.** The current GUI can import image files, preview them, let a person assign question numbers, sort them numerically, flag duplicates and gaps, and rearrange pages manually. OCR integration, durable project saving, and PDF export are not implemented yet. The export control intentionally remains disabled until the actual exporter and verification gate exist.
+**OCR lokal dan ekspor PDF native sudah terhubung.** Antarmuka menggunakan Bahasa Indonesia serta mendukung impor gambar, pratinjau, pengisian nomor manual, pengurutan numerik, peringatan nomor ganda/celah, dan pemindahan gambar. OCR berjalan melalui Tesseract; PDF dibuat oleh aplikasi. Tetap lakukan pemeriksaan visual sebelum menyimpan PDF.
 
-## Technology
+## Teknologi
 
-- Tauri 2 desktop shell
-- Vanilla TypeScript + Vite UI; no React or UI framework
-- Rust for native services and filesystem/PDF work
-- Tesseract OCR is the first candidate for a compact local recognition engine; validate against real images before freezing model/language data
-- SQLite for saved project state when persistence is implemented
-- No cloud processing by default
+- Tauri 2 sebagai kerangka desktop.
+- TypeScript tanpa framework UI + Vite.
+- Rust untuk layanan native.
+- Tesseract OCR dengan data bahasa Indonesia dan Inggris yang dipasang pada sistem.
+- Peti image untuk membaca gambar dan membuat pratinjau / gambar PDF.
+- Dialog native Tauri untuk memilih foto dan lokasi simpan.
+- Tanpa React, Python runtime, layanan latar belakang, API cloud, atau model visi yang dibundel.
 
-## Requirements
+## Persyaratan pengembangan
 
-- Node.js 22 or a compatible current LTS release, with npm
-- Rust stable toolchain and Cargo
-- Tauri Linux system prerequisites for local desktop builds, including WebKitGTK development packages
-- Tesseract OCR will be needed for the OCR milestone, but is not required for the current UI scaffold
+- Node.js 22 atau versi LTS kompatibel dan npm.
+- Toolchain Rust stable dan Cargo.
+- Prasyarat desktop Tauri untuk Linux, termasuk WebKitGTK 4.1.
+- Tesseract tersedia di PATH dengan data bahasa ind, eng, dan osd.
 
-## Development
+## Menjalankan
 
-Install the frontend dependencies and launch the UI preview:
+Pratinjau antarmuka melalui peramban:
 
     npm install
     npm run dev
 
-The frontend preview is available without compiling the native Rust desktop shell.
-
-For a full desktop build, after installing Rust and the operating system's Tauri prerequisites:
+Menjalankan aplikasi desktop native:
 
     npm run tauri dev
 
-Type-check and production-build the frontend:
+Pemeriksaan frontend:
 
     npm run check
+    npm test
     npm run build
 
-## Privacy and file handling
+Tes Rust:
 
-- Images are opened from the user's local machine and previewed in memory.
-- The current prototype does not upload images to a service.
-- The current prototype does not delete, rename, or modify source files.
-- Persistent project data, OCR, and export are future milestones and must preserve those guarantees.
-- Never log image contents or include exam images in telemetry.
+    cd src-tauri
+    cargo fmt --check
+    cargo test
 
-## Documentation
+Membuat paket release:
 
-- Architecture and boundaries: docs/ARCHITECTURE.md
-- Implementation roadmap and acceptance criteria: docs/ROADMAP.md
+    npm run tauri build
 
-## License
+## Privasi dan penanganan berkas
 
-No license has been selected yet. Do not redistribute this project until its license and repository visibility have been explicitly chosen by the owner.
+- Pengolahan gambar dilakukan secara lokal.
+- OCR membaca berkas yang dipilih pengguna; gambar tidak diunggah ke layanan eksternal.
+- Pratinjau dibuat dalam ukuran kecil untuk mengurangi pemakaian memori.
+- Foto sumber tidak diubah nama, ditimpa, atau dihapus.
+- PDF disimpan ke tujuan yang dipilih pengguna.
+- Tidak ada pemrosesan melalui model daring.
+
+## Dokumentasi
+
+- docs/ARCHITECTURE.md — batas dan desain teknis.
+- docs/ROADMAP.md — rencana pengembangan dan kriteria verifikasi.
+
+## Lisensi
+
+Lisensi distribusi belum dipilih. Jangan mendistribusikan ulang hingga pemilik memilih lisensi proyek.

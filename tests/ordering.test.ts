@@ -21,6 +21,19 @@ test("keeps duplicate numbers stable so a human can resolve them", () => {
   assert.deepEqual(sortByQuestionNumber(input).map((item) => item.id), ["q2", "q4-first", "q4-second"]);
 });
 
+test("respects the current manual order among equal and unassigned numbers", () => {
+  const input = [
+    page("continuation-b", 4, 9),
+    page("continuation-a", 4, 1),
+    page("cover-or-diagram", null, 0),
+    page("another-unassigned", null, 2),
+  ];
+  assert.deepEqual(
+    sortByQuestionNumber(input).map((item) => item.id),
+    ["continuation-b", "continuation-a", "cover-or-diagram", "another-unassigned"],
+  );
+});
+
 test("reports duplicate numbers, gaps, and unassigned pages", () => {
   const report = inspectNumbering([
     page("q1", 1, 0),
