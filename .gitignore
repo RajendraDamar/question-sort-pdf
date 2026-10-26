@@ -1,0 +1,28 @@
+# Dependency and build outputs
+node_modules/
+dist/
+dist-ssr/
+target/
+src-tauri/target/
+*.local
+
+# Logs and transient files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.tmp
+
+# Local secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.sw?
