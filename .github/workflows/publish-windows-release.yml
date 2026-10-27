@@ -1,0 +1,62 @@
+name: Terbitkan installer Windows yang telah diuji
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Tag rilis yang sudah ada
+        required: true
+        default: v0.1.0
+        type: string
+      artifact_run_id:
+        description: ID run Windows build sukses
+        required: true
+        default: '40436916316'
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Terbitkan installer terverifikasi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil artefak installer dari run Windows yang sukses
+        uses: actions/download-artifact@v4
+        with:
+          name: QuestionSort-PDF-Windows-x64
+          path: dist/windows
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validasi artefak sebelum publikasi
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t installers < <(find dist/windows -maxdepth 2 -type f -iname '*setup.exe' -print)
+          if [[ ${#installers[@]} -ne 1 ]]; then
+            echo "Expected exactly one NSIS setup.exe, found ${#installers[@]}" >&2
+            find dist/windows -maxdepth 3 -type f -printf '%p (%s bytes)\n'
+            exit 1
+          fi
+          bytes=$(stat -c '%s' "${installers[0]}")
+          if (( bytes < 1000000 )); then
+            echo "Installer is unexpectedly small: ${bytes} bytes" >&2
+            exit 1
+          fi
+          sha256sum "${installers[0]}" | tee dist/windows/SHA256SUMS.txt
+          printf 'Installer: %s\nSize: %s bytes\n' "${installers[0]}" "$bytes"
+
+      - name: Buat atau perbarui GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: QuestionSort PDF ${{ inputs.tag_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/windows/*setup.exe
+            dist/windows/SHA256SUMS.txt
