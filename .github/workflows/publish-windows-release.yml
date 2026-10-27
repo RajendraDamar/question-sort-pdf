@@ -47,8 +47,11 @@ jobs:
             echo "Installer is unexpectedly small: ${bytes} bytes" >&2
             exit 1
           fi
-          sha256sum "${installers[0]}" | tee dist/windows/SHA256SUMS.txt
-          printf 'Installer: %s\nSize: %s bytes\n' "${installers[0]}" "$bytes"
+          hash=$(sha256sum "${installers[0]}" | awk '{print $1}')
+          base=$(basename "${installers[0]}")
+          asset_name="${base// /.}"
+          printf '%s  %s\n' "$hash" "$asset_name" | tee dist/windows/SHA256SUMS.txt
+          printf 'Installer: %s\nRelease asset: %s\nSize: %s bytes\n' "${installers[0]}" "$asset_name" "$bytes"
 
       - name: Buat atau perbarui GitHub Release
         uses: softprops/action-gh-release@v2
