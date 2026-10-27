@@ -391,7 +391,10 @@ fn tesseract_tsv(
     let mut command = Command::new(executable);
     command.arg(path).arg("stdout");
     if let Some(tessdata_dir) = tessdata_dir {
-        command.arg("--tessdata-dir").arg(tessdata_dir);
+        command
+            .env("TESSDATA_PREFIX", tessdata_dir)
+            .arg("--tessdata-dir")
+            .arg(tessdata_dir);
     }
     let result = command
         .arg("-l")

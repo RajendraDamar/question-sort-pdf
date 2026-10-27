@@ -1,6 +1,6 @@
 [package]
 name = "question-sort-pdf"
-version = "0.1.0"
+version = "0.1.1"
 description = "A lightweight, local-first desktop app for arranging exam images into a verified PDF."
 authors = []
 edition = "2024"

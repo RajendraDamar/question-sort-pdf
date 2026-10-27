@@ -41,7 +41,7 @@ jobs:
           $expectedHash = 'BEE9E3434BD94FD65387D9BE28CD467A41F61B1275383B55B0F59A1331270AE4'
           $actualHash = (Get-FileHash -Path $installer -Algorithm SHA256).Hash
           if ($actualHash -ne $expectedHash) { throw "Hash installer Tesseract tidak cocok: $actualHash" }
-          $process = Start-Process -FilePath $installer -ArgumentList @('/S',"/D=$installDir") -Wait -PassThru
+          $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Pemasang Tesseract gagal dengan kode $($process.ExitCode)" }
           if (!(Test-Path (Join-Path $installDir 'tesseract.exe'))) {
             Get-ChildItem $installDir -Recurse | Select-Object -First 40 FullName
@@ -54,11 +54,27 @@ jobs:
           Get-ChildItem $installDir -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE)' } | Copy-Item -Destination $bundleDir -ErrorAction SilentlyContinue
           $systemTessdata = Join-Path $installDir 'tessdata'
           New-Item -ItemType Directory -Force -Path $systemTessdata | Out-Null
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata' -OutFile (Join-Path $tessdataDir 'eng.traineddata')
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/ind.traineddata' -OutFile (Join-Path $tessdataDir 'ind.traineddata')
-          Copy-Item (Join-Path $tessdataDir 'eng.traineddata') $systemTessdata
-          Copy-Item (Join-Path $tessdataDir 'ind.traineddata') $systemTessdata
-          Add-Content -Path $env:GITHUB_PATH -Value $installDir
+          $modelHashes = @{
+            'eng.traineddata' = '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2'
+            'ind.traineddata' = '69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88'
+          }
+          foreach ($modelName in $modelHashes.Keys) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/$modelName" -OutFile (Join-Path $tessdataDir $modelName)
+            $modelPath = Join-Path $tessdataDir $modelName
+            if ((Get-Item $modelPath).Length -lt 250000) { throw "Data bahasa terlalu kecil atau tidak lengkap: $modelName" }
+            $modelHash = (Get-FileHash -Path $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($modelHash -ne $modelHashes[$modelName]) { throw "Hash data bahasa tidak cocok untuk $modelName : $modelHash" }
+            Copy-Item $modelPath $systemTessdata
+          }
+          foreach ($folder in @('configs', 'tessconfigs')) {
+            $sourceDir = Join-Path $systemTessdata $folder
+            if (Test-Path $sourceDir) { Copy-Item -Path $sourceDir -Destination $tessdataDir -Recurse -Force }
+          }
+          if (!(Test-Path (Join-Path $tessdataDir 'configs/tsv'))) {
+            Get-ChildItem $systemTessdata -Recurse | Select-Object -First 80 FullName
+            throw 'Konfigurasi Tesseract configs/tsv tidak ditemukan; OCR TSV tidak bisa berjalan.'
+          }
+          $env:TESSDATA_PREFIX = $tessdataDir
           & (Join-Path $bundleDir 'tesseract.exe') --tessdata-dir $tessdataDir --list-langs
           if ($LASTEXITCODE -ne 0) { throw 'Tesseract gagal memuat model bahasa yang dibundel.' }
 
@@ -77,11 +93,55 @@ jobs:
       - name: Buat installer NSIS
         run: npm run tauri build -- --bundles nsis
 
+      - name: Uji installer dan OCR setelah instalasi
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          if (!$installer) { throw 'Installer NSIS tidak ditemukan.' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'qspdf-smoke'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Instalasi smoke test gagal: kode $($process.ExitCode)" }
+          $tesseract = Join-Path $installDir 'tesseract/tesseract.exe'
+          $tessdataDir = Join-Path $installDir 'tesseract/tessdata'
+          if (!(Test-Path $tesseract)) { throw "Tesseract tidak ada di installer yang terpasang: $tesseract" }
+          foreach ($modelName in @('eng.traineddata', 'ind.traineddata')) {
+            $modelPath = Join-Path $tessdataDir $modelName
+            if (!(Test-Path $modelPath) -or (Get-Item $modelPath).Length -lt 250000) { throw "Model bahasa tidak valid setelah instalasi: $modelPath" }
+          }
+          if (!(Test-Path (Join-Path $tessdataDir 'configs/tsv'))) { throw 'File konfigurasi TSV tidak ikut terpasang.' }
+          $env:TESSDATA_PREFIX = $tessdataDir
+          $fixture = Join-Path $PWD 'tests/fixtures/question-7.png'
+          $output = & $tesseract $fixture stdout --tessdata-dir $tessdataDir -l ind+eng --psm 3 tsv 2>&1
+          $exitCode = $LASTEXITCODE
+          $outputText = $output -join "`n"
+          if ($exitCode -ne 0 -or $outputText -match '(?i)Error opening data file|Failed loading language|Could not initialize tesseract|Can.t open tsv') {
+            throw "OCR smoke test gagal untuk installer yang sudah terpasang (exit=$exitCode):`n$outputText"
+          }
+          Write-Host 'LULUS: installer berisi Tesseract, model eng+ind, konfigurasi TSV, dan berhasil menjalankan OCR.'
+
+      - name: Siapkan nama aset rilis dan checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          if (!$installer) { throw 'Installer untuk checksum tidak ditemukan.' }
+          $assetName = $installer.Name.Replace(' ', '.')
+          $assetPath = Join-Path $installer.DirectoryName $assetName
+          if ($installer.Name -ne $assetName) {
+            Move-Item -LiteralPath $installer.FullName -Destination $assetPath
+          }
+          $hash = (Get-FileHash -Path $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path (Join-Path $PWD 'SHA256SUMS.txt') -Value "$hash  $assetName" -Encoding ascii
+          Write-Host "SHA-256: $hash  $assetName"
+
       - name: Unggah installer untuk diunduh
         uses: actions/upload-artifact@v4
         with:
           name: QuestionSort-PDF-Windows-x64
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -91,4 +151,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: src-tauri/target/release/bundle/nsis/*-setup.exe
+          files: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            SHA256SUMS.txt
