@@ -378,6 +378,20 @@ fn tsv_source_page_number(tsv: &str) -> Option<NumberCandidate> {
     candidates.into_iter().next()
 }
 
+/// Tesseract's Windows build does not consistently accept Win32 extended
+/// paths (the \?\ prefix) even though Rust and Tauri can resolve them.
+/// Strip that prefix before passing paths across the process boundary.
+fn tesseract_compatible_path(path: &Path) -> PathBuf {
+    let path_text = path.as_os_str().to_string_lossy();
+    if let Some(unc_path) = path_text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!("\\\\{}", unc_path))
+    } else if let Some(drive_path) = path_text.strip_prefix(r"\\?\") {
+        PathBuf::from(drive_path)
+    } else {
+        path.to_path_buf()
+    }
+}
+
 /// Run Tesseract with an explicit page-segmentation mode and return TSV
 /// with word positions. Different modes serve different tasks: normal page
 /// layout is better at question labels while sparse-text mode reliably sees
@@ -388,13 +402,16 @@ fn tesseract_tsv(
     executable: &Path,
     tessdata_dir: Option<&Path>,
 ) -> Result<String, String> {
+    let executable = tesseract_compatible_path(executable);
+    let image_path = tesseract_compatible_path(path);
     let mut command = Command::new(executable);
-    command.arg(path).arg("stdout");
+    command.arg(image_path).arg("stdout");
     if let Some(tessdata_dir) = tessdata_dir {
+        let tessdata_dir = tesseract_compatible_path(tessdata_dir);
         command
-            .env("TESSDATA_PREFIX", tessdata_dir)
+            .env("TESSDATA_PREFIX", &tessdata_dir)
             .arg("--tessdata-dir")
-            .arg(tessdata_dir);
+            .arg(&tessdata_dir);
     }
     let result = command
         .arg("-l")
@@ -497,13 +514,52 @@ pub async fn detect_question_number(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    use super::tesseract_tsv;
     use super::{
-        detect_question_number_inner, number_prefix, tsv_candidates, tsv_source_page_number,
+        detect_question_number_inner, number_prefix, tesseract_compatible_path, tsv_candidates,
+        tsv_source_page_number,
     };
     use std::{
         path::{Path, PathBuf},
         process::Command,
     };
+
+    #[test]
+    fn strips_windows_verbatim_prefix_for_tesseract() {
+        assert_eq!(
+            tesseract_compatible_path(Path::new(
+                r"\\?\C:\Users\User\AppData\Local\QuestionSort PDF\tesseract\tessdata"
+            )),
+            PathBuf::from(r"C:\Users\User\AppData\Local\QuestionSort PDF\tesseract\tessdata")
+        );
+        assert_eq!(
+            tesseract_compatible_path(Path::new(r"\\?\UNC\server\share\tessdata")),
+            PathBuf::from(r"\\server\share\tessdata")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bundled_tesseract_runs_with_windows_verbatim_paths() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/tesseract");
+        let executable = root.join("tesseract.exe").canonicalize().unwrap();
+        let tessdata_dir = root.join("tessdata").canonicalize().unwrap();
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/question-7.png")
+            .canonicalize()
+            .unwrap();
+
+        assert!(executable.to_string_lossy().starts_with("\\\\?\\"));
+        assert!(tessdata_dir.to_string_lossy().starts_with("\\\\?\\"));
+        let output = tesseract_tsv(&fixture, 3, &executable, Some(&tessdata_dir)).unwrap();
+        assert!(
+            tsv_candidates(&output)
+                .iter()
+                .any(|candidate| candidate.number == 7),
+            "expected question 7 in TSV output"
+        );
+    }
 
     #[test]
     fn bundled_tesseract_requires_executable_and_both_language_models() {
