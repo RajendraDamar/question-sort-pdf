@@ -74,6 +74,7 @@ jobs:
             Get-ChildItem $systemTessdata -Recurse | Select-Object -First 80 FullName
             throw 'Konfigurasi Tesseract configs/tsv tidak ditemukan; OCR TSV tidak bisa berjalan.'
           }
+          Add-Content -Path $env:GITHUB_PATH -Value $installDir
           $env:TESSDATA_PREFIX = $tessdataDir
           & (Join-Path $bundleDir 'tesseract.exe') --tessdata-dir $tessdataDir --list-langs
           if ($LASTEXITCODE -ne 0) { throw 'Tesseract gagal memuat model bahasa yang dibundel.' }
