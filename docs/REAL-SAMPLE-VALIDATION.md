@@ -12,6 +12,7 @@ Satu kumpulan berisi 22 foto JPEG dari lembar soal Matematika diuji secara lokal
 - Nomor footer cocok dengan halaman cetak yang diharapkan pada **22/22 foto**.
 - Pengujian dilakukan memakai Tesseract lokal dengan bahasa Indonesia dan Inggris; teks, posisi, dan nomor dari footer diperiksa terpisah dari nomor soal di isi halaman.
 - Nomor soal di badan halaman tidak cocok untuk dijadikan nomor halaman: sebagian foto berisi beberapa soal, sehingga nomor soal tumpang tindih di antara foto.
+- Pemeriksaan lanjutan menemukan bahwa mode sparse-text dapat mengira teks resep "250 gram" sebagai nomor soal pada halaman cetak 3. Mode tata letak standar mengenali label sebenarnya "4. DIMSUM". Karena itu, deteksi nomor soal sekarang memakai PSM 3 sedangkan deteksi footer tetap memakai PSM 11; angka tanpa tanda baca eksplisit tidak diterima sebagai label soal.
 - Tes regresi tambahan memastikan footer di kanan-bawah dapat dibaca dan nomor soal di badan halaman tidak dianggap sebagai nomor footer.
 
 ## Batas kesimpulan

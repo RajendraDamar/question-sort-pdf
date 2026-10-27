@@ -25,7 +25,7 @@ Modul src/domain/ordering.ts memisahkan nomor halaman sumber dari nomor soal. Bi
 ### Layanan native
 
 - **Pemeriksaan gambar:** validasi jalur, format, ukuran berkas, dan dimensi; buat pratinjau JPEG kecil.
-- **OCR:** menjalankan Tesseract lokal dengan bahasa Indonesia dan Inggris. TSV OCR dipakai untuk mendapatkan teks, posisi, kandidat nomor soal, serta nomor halaman tercetak yang dicari terpisah di area footer bawah-kanan.
+- **OCR:** menjalankan Tesseract lokal dalam dua mode: tata letak halaman standar (PSM 3) untuk label soal, dan sparse-text (PSM 11) untuk footer halaman. Label soal harus memiliki tanda baca eksplisit; angka isi seperti "250 gram" tidak boleh otomatis dianggap nomor soal. TSV menyediakan bukti teks, posisi, confidence, dan nomor halaman cetak secara terpisah.
 - **Penyelesaian kandidat:** kandidat nomor disusun menurut posisi baca dengan aturan yang eksplisit. Kandidat tetap wajib diperiksa pengguna.
 - **Ekspor PDF:** memproses satu gambar penuh pada satu waktu, mengubah gambar menjadi JPEG yang kompatibel, menulis halaman A4 ke PDF, lalu memvalidasi berkas sebelum menyatakan berhasil.
 

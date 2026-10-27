@@ -217,27 +217,24 @@ fn tsv_candidates(tsv: &str) -> Vec<NumberCandidate> {
             .get(1)
             .map(|word| matches!(word.text.as_str(), "." | ")" | "]" | ":" | "-"))
             .unwrap_or(false);
-        let (number, punctuated) = match number_prefix(&first.text) {
-            Some(value) => value,
-            None => {
+        // Do not treat a bare number as a question label. This used to turn
+        // body text such as "250 gram" into question 250. Require explicit
+        // punctuation, either attached to the number ("7.") or recognized as
+        // the following OCR word ("7", ".", "Sebuah").
+        let number = match number_prefix(&first.text) {
+            Some((number, true)) => number,
+            Some((number, false)) if second_is_punctuation => number,
+            Some(_) if !second_is_punctuation => continue,
+            Some(_) | None => {
                 if !second_is_punctuation {
                     continue;
                 }
-                let Some(value) = number_prefix(&format!("{}.", first.text)) else {
+                let Some((number, true)) = number_prefix(&format!("{}.", first.text)) else {
                     continue;
                 };
-                value
+                number
             }
         };
-
-        // Bare digits on the top line are commonly page/section labels. Accept
-        // them only lower in the body and only when followed by other OCR words.
-        if !punctuated
-            && !second_is_punctuation
-            && (top_ratio < 0.07 || words.len() < 2 || left_ratio > 0.22)
-        {
-            continue;
-        }
 
         let evidence = words
             .iter()
@@ -376,16 +373,18 @@ fn tsv_source_page_number(tsv: &str) -> Option<NumberCandidate> {
     candidates.into_iter().next()
 }
 
-fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
-    let path = validate_image_path(&path)?;
-    let _dimensions = checked_dimensions(&path)?;
+/// Run Tesseract with an explicit page-segmentation mode and return TSV
+/// with word positions. Different modes serve different tasks: normal page
+/// layout is better at question labels while sparse-text mode reliably sees
+/// the page footer.
+fn tesseract_tsv(path: &Path, psm: u8) -> Result<String, String> {
     let result = Command::new("tesseract")
-        .arg(&path)
+        .arg(path)
         .arg("stdout")
         .arg("-l")
         .arg("ind+eng")
         .arg("--psm")
-        .arg("11")
+        .arg(psm.to_string())
         .arg("tsv")
         .output()
         .map_err(|error| {
@@ -401,10 +400,25 @@ fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
         return Err(format!("OCR gagal membaca gambar: {}", stderr.trim()));
     }
 
-    let tsv = String::from_utf8_lossy(&result.stdout);
-    let candidates = tsv_candidates(&tsv);
+    Ok(String::from_utf8_lossy(&result.stdout).into_owned())
+}
+
+fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
+    let path = validate_image_path(&path)?;
+    let _dimensions = checked_dimensions(&path)?;
+
+    // Standard page layout (PSM 3) captures headings like "4. DIMSUM" that
+    // sparse-text mode may miss when a page includes a large illustration.
+    let layout_tsv = tesseract_tsv(&path, 3)?;
+    // Sparse-text mode (PSM 11) finds the footer on these same illustrated pages.
+    let sparse_tsv = tesseract_tsv(&path, 11)?;
+
+    let mut candidates = tsv_candidates(&layout_tsv);
+    if candidates.is_empty() {
+        candidates = tsv_candidates(&sparse_tsv);
+    }
     let primary = candidates.first();
-    let source_page = tsv_source_page_number(&tsv);
+    let source_page = tsv_source_page_number(&sparse_tsv);
 
     Ok(OcrResult {
         question_number: primary.map(|candidate| candidate.number),
@@ -418,7 +432,7 @@ fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
         source_page_evidence: source_page
             .map(|candidate| candidate.evidence)
             .unwrap_or_default(),
-        engine: "Tesseract OCR (Indonesia + Inggris; nomor soal dan footer halaman)".to_string(),
+        engine: "Tesseract OCR (Indonesia + Inggris; tata letak halaman + footer)".to_string(),
     })
 }
 
@@ -499,6 +513,33 @@ mod tests {
             Some(7)
         );
         assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn does_not_misread_bare_measurement_as_a_question_number() {
+        let tsv = concat!(
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n",
+            "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n",
+            "5\t1\t2\t1\t1\t1\t159\t372\t40\t24\t92.9\t250\n",
+            "5\t1\t2\t1\t1\t2\t208\t372\t46\t24\t91.5\tgram\n",
+        );
+        assert!(tsv_candidates(tsv).is_empty());
+    }
+
+    #[test]
+    fn recognizes_punctuation_when_ocr_splits_it_from_the_question_number() {
+        let tsv = concat!(
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n",
+            "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n",
+            "5\t1\t2\t1\t1\t1\t100\t230\t12\t30\t94.0\t7\n",
+            "5\t1\t2\t1\t1\t2\t114\t230\t3\t30\t89.0\t.\n",
+            "5\t1\t2\t1\t1\t3\t123\t230\t90\t30\t91.0\tContoh\n",
+        );
+        let candidates = tsv_candidates(tsv);
+        assert_eq!(
+            candidates.first().map(|candidate| candidate.number),
+            Some(7)
+        );
     }
 
     #[test]
