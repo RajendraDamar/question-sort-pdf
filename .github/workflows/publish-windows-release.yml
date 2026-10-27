@@ -36,20 +36,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t installers < <(find dist/windows -maxdepth 2 -type f -iname '*setup.exe' -print)
+          mapfile -t installers < <(find dist/windows -type f -iname '*setup.exe' -print)
           if [[ ${#installers[@]} -ne 1 ]]; then
             echo "Expected exactly one NSIS setup.exe, found ${#installers[@]}" >&2
-            find dist/windows -maxdepth 3 -type f -printf '%p (%s bytes)\n'
+            find dist/windows -type f -printf '%p (%s bytes)\n'
             exit 1
           fi
-          bytes=$(stat -c '%s' "${installers[0]}")
+          base=$(basename "${installers[0]}")
+          asset_name="${base// /.}"
+          normalized="dist/windows/$asset_name"
+          if [[ "${installers[0]}" != "$normalized" ]]; then cp "${installers[0]}" "$normalized"; fi
+          bytes=$(stat -c '%s' "$normalized")
           if (( bytes < 1000000 )); then
             echo "Installer is unexpectedly small: ${bytes} bytes" >&2
             exit 1
           fi
-          hash=$(sha256sum "${installers[0]}" | awk '{print $1}')
-          base=$(basename "${installers[0]}")
-          asset_name="${base// /.}"
+          hash=$(sha256sum "$normalized" | awk '{print $1}')
           printf '%s  %s\n' "$hash" "$asset_name" | tee dist/windows/SHA256SUMS.txt
           printf 'Installer: %s\nRelease asset: %s\nSize: %s bytes\n' "${installers[0]}" "$asset_name" "$bytes"
 
