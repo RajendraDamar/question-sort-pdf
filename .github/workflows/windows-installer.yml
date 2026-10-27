@@ -1,0 +1,90 @@
+name: Paket Windows QuestionSort PDF
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Build installer Windows 11 x64
+    runs-on: windows-latest
+    steps:
+      - name: Ambil kode sumber
+        uses: actions/checkout@v4
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Siapkan Rust stabil
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Pasang dependensi npm
+        run: npm ci
+
+      - name: Unduh dan siapkan Tesseract lokal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'tesseract-setup.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'tesseract-install'
+          $bundleDir = Join-Path $PWD 'src-tauri/resources/tesseract'
+          $tessdataDir = Join-Path $bundleDir 'tessdata'
+          Invoke-WebRequest -Uri 'https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.5.3.20260724.exe' -OutFile $installer
+          $process = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',("/DIR=$installDir")) -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Pemasang Tesseract gagal dengan kode $($process.ExitCode)" }
+          if (!(Test-Path (Join-Path $installDir 'tesseract.exe'))) {
+            Get-ChildItem $installDir -Recurse | Select-Object -First 40 FullName
+            throw 'tesseract.exe tidak ditemukan di hasil pemasangan.'
+          }
+          New-Item -ItemType Directory -Force -Path $tessdataDir | Out-Null
+          Copy-Item (Join-Path $installDir 'tesseract.exe') $bundleDir
+          Get-ChildItem $installDir -File -Filter '*.dll' | Copy-Item -Destination $bundleDir
+          Get-ChildItem $installDir -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE)' } | Copy-Item -Destination $bundleDir -ErrorAction SilentlyContinue
+          $systemTessdata = Join-Path $installDir 'tessdata'
+          New-Item -ItemType Directory -Force -Path $systemTessdata | Out-Null
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata' -OutFile (Join-Path $tessdataDir 'eng.traineddata')
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/ind.traineddata' -OutFile (Join-Path $tessdataDir 'ind.traineddata')
+          Copy-Item (Join-Path $tessdataDir 'eng.traineddata') $systemTessdata
+          Copy-Item (Join-Path $tessdataDir 'ind.traineddata') $systemTessdata
+          Add-Content -Path $env:GITHUB_PATH -Value $installDir
+          & (Join-Path $bundleDir 'tesseract.exe') --tessdata-dir $tessdataDir --list-langs
+          if ($LASTEXITCODE -ne 0) { throw 'Tesseract gagal memuat model bahasa yang dibundel.' }
+
+      - name: Periksa frontend dan logika
+        run: |
+          npm run check
+          npm test
+          npm run build
+
+      - name: Uji kode native
+        working-directory: src-tauri
+        run: |
+          cargo fmt --check
+          cargo test
+
+      - name: Buat installer NSIS
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Unggah installer untuk diunduh
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestionSort-PDF-Windows-x64
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Terbitkan aset pada GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: src-tauri/target/release/bundle/nsis/*-setup.exe

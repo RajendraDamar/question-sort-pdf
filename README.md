@@ -13,10 +13,16 @@ Aplikasi desktop lokal yang ringan untuk mengurutkan foto soal, memeriksa urutan
 - Tauri 2 sebagai kerangka desktop.
 - TypeScript tanpa framework UI + Vite.
 - Rust untuk layanan native.
-- Tesseract OCR dengan data bahasa Indonesia dan Inggris yang dipasang pada sistem.
+- Tesseract OCR lokal: dari sistem pada Linux pengembangan, dan dibundel bersama model bahasa Indonesia/Inggris dalam paket Windows.
 - Peti image untuk membaca gambar dan membuat pratinjau / gambar PDF.
 - Dialog native Tauri untuk memilih foto dan lokasi simpan.
 - Tanpa React, Python runtime, layanan latar belakang, API cloud, atau model visi yang dibundel.
+
+## Instalasi Windows 11
+
+Unduh berkas QuestionSort PDF Windows x64 setup dari GitHub Releases, jalankan pemasang, lalu buka aplikasi dari Start Menu. Paket Windows menyertakan Tesseract beserta model bahasa Inggris dan Indonesia; Node.js, Rust, dan pemasangan Tesseract terpisah tidak diperlukan. WebView2 akan dipasang jika Windows belum memilikinya dan koneksi internet tersedia.
+
+Untuk pemasang yang belum ditandatangani secara digital, Windows SmartScreen mungkin menampilkan peringatan. Distribusi resmi bertanda tangan digital belum disiapkan.
 
 ## Persyaratan pengembangan
 

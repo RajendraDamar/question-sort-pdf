@@ -1,6 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Serialize;
-use std::{collections::BTreeMap, path::Path, process::Command};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    process::Command,
+};
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NumberCandidate {
@@ -377,10 +382,18 @@ fn tsv_source_page_number(tsv: &str) -> Option<NumberCandidate> {
 /// with word positions. Different modes serve different tasks: normal page
 /// layout is better at question labels while sparse-text mode reliably sees
 /// the page footer.
-fn tesseract_tsv(path: &Path, psm: u8) -> Result<String, String> {
-    let result = Command::new("tesseract")
-        .arg(path)
-        .arg("stdout")
+fn tesseract_tsv(
+    path: &Path,
+    psm: u8,
+    executable: &Path,
+    tessdata_dir: Option<&Path>,
+) -> Result<String, String> {
+    let mut command = Command::new(executable);
+    command.arg(path).arg("stdout");
+    if let Some(tessdata_dir) = tessdata_dir {
+        command.arg("--tessdata-dir").arg(tessdata_dir);
+    }
+    let result = command
         .arg("-l")
         .arg("ind+eng")
         .arg("--psm")
@@ -403,15 +416,19 @@ fn tesseract_tsv(path: &Path, psm: u8) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&result.stdout).into_owned())
 }
 
-fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
-    let path = validate_image_path(&path)?;
+fn detect_question_number_with_engine(
+    raw_path: String,
+    executable: PathBuf,
+    tessdata_dir: Option<PathBuf>,
+) -> Result<OcrResult, String> {
+    let path = validate_image_path(&raw_path)?;
     let _dimensions = checked_dimensions(&path)?;
 
     // Standard page layout (PSM 3) captures headings like "4. DIMSUM" that
     // sparse-text mode may miss when a page includes a large illustration.
-    let layout_tsv = tesseract_tsv(&path, 3)?;
+    let layout_tsv = tesseract_tsv(&path, 3, &executable, tessdata_dir.as_deref())?;
     // Sparse-text mode (PSM 11) finds the footer on these same illustrated pages.
-    let sparse_tsv = tesseract_tsv(&path, 11)?;
+    let sparse_tsv = tesseract_tsv(&path, 11, &executable, tessdata_dir.as_deref())?;
 
     let mut candidates = tsv_candidates(&layout_tsv);
     if candidates.is_empty() {
@@ -436,11 +453,43 @@ fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
     })
 }
 
+fn bundled_tesseract(resource_dir: Option<PathBuf>) -> (PathBuf, Option<PathBuf>) {
+    if let Some(resource_dir) = resource_dir {
+        let root = resource_dir.join("tesseract");
+        let executable = root.join(if cfg!(windows) {
+            "tesseract.exe"
+        } else {
+            "tesseract"
+        });
+        let tessdata_dir = root.join("tessdata");
+        if executable.is_file()
+            && tessdata_dir.join("eng.traineddata").is_file()
+            && tessdata_dir.join("ind.traineddata").is_file()
+        {
+            return (executable, Some(tessdata_dir));
+        }
+    }
+    // Developer installations and Linux currently use the system Tesseract.
+    (PathBuf::from("tesseract"), None)
+}
+
+#[cfg(test)]
+fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
+    detect_question_number_with_engine(path, PathBuf::from("tesseract"), None)
+}
+
 #[tauri::command]
-pub async fn detect_question_number(path: String) -> Result<OcrResult, String> {
-    tauri::async_runtime::spawn_blocking(move || detect_question_number_inner(path))
-        .await
-        .map_err(|error| format!("Proses OCR dihentikan secara tidak terduga: {error}"))?
+pub async fn detect_question_number(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<OcrResult, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (executable, tessdata_dir) = bundled_tesseract(resource_dir);
+        detect_question_number_with_engine(path, executable, tessdata_dir)
+    })
+    .await
+    .map_err(|error| format!("Proses OCR dihentikan secara tidak terduga: {error}"))?
 }
 
 #[cfg(test)]
@@ -448,7 +497,47 @@ mod tests {
     use super::{
         detect_question_number_inner, number_prefix, tsv_candidates, tsv_source_page_number,
     };
-    use std::{path::Path, process::Command};
+    use std::{
+        path::{Path, PathBuf},
+        process::Command,
+    };
+
+    #[test]
+    fn bundled_tesseract_requires_executable_and_both_language_models() {
+        let root = std::env::temp_dir().join(format!(
+            "questionsort-tesseract-test-{}",
+            std::process::id()
+        ));
+        let bundled = root.join("tesseract");
+        let tessdata = bundled.join("tessdata");
+        std::fs::create_dir_all(&tessdata).unwrap();
+        std::fs::write(
+            bundled.join(if cfg!(windows) {
+                "tesseract.exe"
+            } else {
+                "tesseract"
+            }),
+            b"fixture",
+        )
+        .unwrap();
+        std::fs::write(tessdata.join("eng.traineddata"), b"fixture").unwrap();
+        std::fs::write(tessdata.join("ind.traineddata"), b"fixture").unwrap();
+        let (executable, models) = super::bundled_tesseract(Some(root.clone()));
+        assert_eq!(
+            executable,
+            bundled.join(if cfg!(windows) {
+                "tesseract.exe"
+            } else {
+                "tesseract"
+            })
+        );
+        assert_eq!(models, Some(tessdata.clone()));
+        std::fs::remove_file(tessdata.join("ind.traineddata")).unwrap();
+        let (fallback, models) = super::bundled_tesseract(Some(root.clone()));
+        assert_eq!(fallback, PathBuf::from("tesseract"));
+        assert_eq!(models, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn parses_punctuated_question_numbers() {
