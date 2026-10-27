@@ -6,6 +6,7 @@ export interface NumberedPage {
   id: string;
   questionNumber: number | null;
   originalIndex: number;
+  sourcePageNumber?: number | null;
 }
 
 export interface NumberingReport {
@@ -22,6 +23,18 @@ export function sortByQuestionNumber<T extends NumberedPage>(pages: T[]): T[] {
     // JavaScript sorting is stable: equal question numbers retain the
     // user's current order, including manually arranged continuation pages.
     return a.questionNumber - b.questionNumber;
+  });
+}
+
+/** Sort by explicit source-page numbers, keeping unresolved pages stable at the end. */
+export function sortBySourcePageNumber<T extends NumberedPage>(pages: T[]): T[] {
+  return [...pages].sort((a, b) => {
+    const aNumber = a.sourcePageNumber ?? null;
+    const bNumber = b.sourcePageNumber ?? null;
+    if (aNumber === null && bNumber === null) return 0;
+    if (aNumber === null) return 1;
+    if (bNumber === null) return -1;
+    return aNumber - bNumber;
   });
 }
 

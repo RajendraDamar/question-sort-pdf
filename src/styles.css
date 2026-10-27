@@ -256,6 +256,7 @@ h1 { margin: 17px 0 14px; font-size: clamp(33px, 4.1vw, 49px); font-weight: 800;
 .confirm-label input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--color-accent); }
 .review-confirmation p { margin: 6px 0 0 26px; color: #858fa0; font-size: 10px; line-height: 1.5; }
 .number-status.is-ocr { color: #5265c8; }
+.page-sequence-evidence { display: block; margin-top: 5px; color: #6c7892; font-size: 8px; line-height: 1.4; overflow-wrap: anywhere; }
 .ocr-evidence { margin-top: 10px; padding: 9px; border: 1px solid #e5e8f7; border-radius: 8px; background: #f8f9ff; }
 .ocr-evidence > span { display: block; color: #5362b9; font-size: 9px; font-weight: 750; }
 .ocr-evidence p { margin: 5px 0; color: #616b7e; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -265,6 +266,7 @@ h1 { margin: 17px 0 14px; font-size: clamp(33px, 4.1vw, 49px); font-weight: 800;
   .confirm-label { color: #e0e5f1; }
   .review-confirmation p { color: #a0a9b8; }
   .number-status.is-ocr { color: #aab3ff; }
+  .page-sequence-evidence { color: #b1bbd0; }
   .ocr-evidence { border-color: #363e5a; background: #20263a; }
   .ocr-evidence > span { color: #b2baff; }
   .ocr-evidence p { color: #bbc3d1; }

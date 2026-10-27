@@ -1,12 +1,12 @@
 # QuestionSort PDF
 
-Aplikasi desktop lokal yang ringan untuk mengurutkan foto soal berdasarkan nomor yang tercetak, memeriksa urutannya, lalu menyimpan kumpulan gambar sebagai PDF.
+Aplikasi desktop lokal yang ringan untuk mengurutkan foto soal, memeriksa urutannya, lalu menyimpan kumpulan gambar sebagai PDF. Aplikasi memisahkan **nomor halaman sumber** dari **nomor soal**: footer halaman menjadi kunci urutan bila terbaca; nomor soal hanya menjadi petunjuk isi dan jalur cadangan.
 
 **Prinsip produk:** OCR memberikan usulan; pemeriksaan deterministik menandai ketidakkonsistenan; pengguna memeriksa keputusan yang meragukan. Aplikasi tidak boleh diam-diam menganggap urutan yang belum pasti sebagai benar.
 
 ## Status proyek
 
-**OCR lokal dan ekspor PDF native sudah terhubung.** Antarmuka menggunakan Bahasa Indonesia serta mendukung impor gambar, pratinjau, pengisian nomor manual, pengurutan numerik, peringatan nomor ganda/celah, dan pemindahan gambar. OCR berjalan melalui Tesseract; PDF dibuat oleh aplikasi. Tetap lakukan pemeriksaan visual sebelum menyimpan PDF.
+**OCR lokal dan ekspor PDF native sudah terhubung.** Antarmuka Bahasa Indonesia mendukung impor gambar, pratinjau, koreksi nomor halaman sumber dan nomor soal secara terpisah, pengurutan berdasarkan footer halaman, serta pemindahan gambar. Jika footer tidak ditemukan, aplikasi memakai nomor soal sebagai urutan sementara dan menandai hasilnya untuk pemeriksaan. Tetap lakukan pemeriksaan visual sebelum menyimpan PDF.
 
 ## Teknologi
 

@@ -20,12 +20,12 @@ Folder src/ menggunakan TypeScript, HTML, dan CSS biasa tanpa framework UI besar
 
 ### Logika pengurutan
 
-Modul src/domain/ordering.ts menjalankan pengurutan numerik deterministik serta pemeriksaan nomor kosong, nomor ganda, dan kemungkinan celah. Nama berkas dan waktu pengiriman WhatsApp hanya metadata pendukung, bukan dasar urutan utama.
+Modul src/domain/ordering.ts memisahkan nomor halaman sumber dari nomor soal. Bila footer halaman terbaca, urutan halaman sumber menjadi kunci utama; gambar yang tidak memiliki nomor halaman yang terdeteksi diletakkan di akhir untuk ditinjau. Bila tidak ada footer yang terbaca, nomor soal hanya dipakai sebagai urutan sementara. Nomor soal tidak boleh diasumsikan sama dengan urutan foto, karena satu foto dapat memuat beberapa soal atau soal yang berlanjut ke halaman berikutnya. Nama berkas dan waktu WhatsApp adalah bukti pendukung, bukan kunci utama tanpa pola yang dapat dipercaya.
 
 ### Layanan native
 
 - **Pemeriksaan gambar:** validasi jalur, format, ukuran berkas, dan dimensi; buat pratinjau JPEG kecil.
-- **OCR:** menjalankan Tesseract lokal dengan bahasa Indonesia dan Inggris. TSV OCR dipakai untuk mendapatkan teks, posisi, kandidat nomor, dan nilai pengenalan.
+- **OCR:** menjalankan Tesseract lokal dengan bahasa Indonesia dan Inggris. TSV OCR dipakai untuk mendapatkan teks, posisi, kandidat nomor soal, serta nomor halaman tercetak yang dicari terpisah di area footer bawah-kanan.
 - **Penyelesaian kandidat:** kandidat nomor disusun menurut posisi baca dengan aturan yang eksplisit. Kandidat tetap wajib diperiksa pengguna.
 - **Ekspor PDF:** memproses satu gambar penuh pada satu waktu, mengubah gambar menjadi JPEG yang kompatibel, menulis halaman A4 ke PDF, lalu memvalidasi berkas sebelum menyatakan berhasil.
 
@@ -35,6 +35,8 @@ Status kumpulan gambar saat ini berada di memori selama sesi. Penyimpanan proyek
 
 ## Kontrak pengurutan
 
+- Nomor halaman sumber adalah urutan utama ketika footer eksplisit berhasil dikenali.
+- Nomor soal menggambarkan isi, bukan otomatis urutan halaman; satu foto dapat memuat rentang soal atau halaman lanjutan.
 - Bandingkan nomor sebagai angka: 2 mendahului 10.
 - Nomor yang tidak terbaca tetap belum diketahui, bukan dianggap nol.
 - Nomor ganda tetap dalam urutan stabil dan ditandai untuk ditinjau.
@@ -42,6 +44,7 @@ Status kumpulan gambar saat ini berada di memori selama sesi. Penyimpanan proyek
 - Sampul, diagram, gambar tanpa nomor, serta halaman lanjutan perlu ditempatkan setelah pemeriksaan.
 - Pengguna harus menyatakan sudah memeriksa urutan sebelum ekspor.
 - Jangan menganggap skor OCR atau kesepakatan model sebagai bukti bahwa urutan benar.
+- Model visi/reasoning, bila kelak ditambahkan, hanya menjadi jalur kedua untuk kasus ambigu setelah bukti deterministik; hasilnya tetap harus menunjukkan bukti dan dapat dikoreksi pengguna.
 
 ## Batas ukuran dan memori
 

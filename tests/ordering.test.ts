@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectNumbering, sortByQuestionNumber, type NumberedPage } from "../src/domain/ordering.ts";
+import { inspectNumbering, sortByQuestionNumber, sortBySourcePageNumber, type NumberedPage } from "../src/domain/ordering.ts";
 
 const page = (id: string, questionNumber: number | null, originalIndex: number): NumberedPage => ({
   id, questionNumber, originalIndex,
@@ -32,6 +32,28 @@ test("respects the current manual order among equal and unassigned numbers", () 
     sortByQuestionNumber(input).map((item) => item.id),
     ["continuation-b", "continuation-a", "cover-or-diagram", "another-unassigned"],
   );
+});
+
+test("uses printed source-page order instead of question numbers", () => {
+  const input = [
+    { ...page("source-3", 1, 0), sourcePageNumber: 3 },
+    { ...page("source-1", 2, 1), sourcePageNumber: 1 },
+    { ...page("source-2", 2, 2), sourcePageNumber: 2 },
+  ];
+  assert.deepEqual(sortBySourcePageNumber(input).map((item) => item.id), ["source-1", "source-2", "source-3"]);
+});
+
+test("keeps duplicate printed page numbers stable and unresolved pages last", () => {
+  const input = [
+    { ...page("page-4-first", 2, 0), sourcePageNumber: 4 },
+    { ...page("unresolved-a", 1, 1), sourcePageNumber: null },
+    { ...page("page-2", 3, 2), sourcePageNumber: 2 },
+    { ...page("page-4-second", 4, 3), sourcePageNumber: 4 },
+    { ...page("unresolved-b", null, 4), sourcePageNumber: null },
+  ];
+  assert.deepEqual(sortBySourcePageNumber(input).map((item) => item.id), [
+    "page-2", "page-4-first", "page-4-second", "unresolved-a", "unresolved-b",
+  ]);
 });
 
 test("reports duplicate numbers, gaps, and unassigned pages", () => {

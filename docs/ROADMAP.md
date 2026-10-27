@@ -4,7 +4,8 @@
 
 - [x] Tauri 2 + TypeScript tanpa framework UI
 - [x] Antarmuka responsif dalam Bahasa Indonesia
-- [x] Impor gambar batch, pratinjau, pengisian nomor manual, pengurutan numerik, dan kontrol pemindahan
+- [x] Impor gambar batch, pratinjau, pengisian nomor manual, pengurutan berdasarkan footer halaman, dan kontrol pemindahan
+- [x] Pisahkan nomor halaman sumber dari nomor soal pada data dan antarmuka
 - [x] Peringatan nomor kosong, nomor ganda, dan celah yang mungkin
 - [x] Foto sumber tetap utuh
 - [x] Dialog sistem untuk memilih gambar dan tujuan ekspor
@@ -25,8 +26,9 @@
 ## Fase 2 — OCR lokal
 
 - Benchmark Tesseract pada foto soal nyata, bukan hanya gambar sintetis.
-- Kenali nomor memakai teks, posisi, dan konteks sekitar.
-- Pertahankan bukti OCR mentah serta kandidat alternatif.
+- [x] Kenali nomor halaman sumber dari footer bawah-kanan secara terpisah dari nomor soal.
+- Kenali nomor soal memakai teks, posisi, dan konteks sekitar.
+- Pertahankan bukti footer OCR serta kandidat nomor soal alternatif.
 - Ulangi preprocessing hanya jika menambah bukti.
 - Seluruh antarmuka dan petunjuk pengguna menggunakan Bahasa Indonesia.
 
@@ -34,9 +36,11 @@
 
 ## Fase 3 — Verifikasi urutan
 
-- Pengurutan numerik deterministik menjadi jalur utama.
-- Deteksi nomor ganda, kemungkinan celah, nomor tak terbaca, gambar tanpa nomor, dan kemungkinan halaman lanjutan.
-- Pertimbangkan model visi opsional hanya bila benchmark menunjukkan peningkatan yang berarti; jangan bundel model ke installer.
+- [x] Utamakan nomor halaman sumber yang eksplisit, bukan menyamakan nomor soal dengan urutan foto.
+- [x] Letakkan halaman tanpa nomor sumber yang terbaca di bagian akhir untuk ditinjau; izinkan koreksi manual.
+- Tandai nomor halaman sumber ganda/celah dan halaman yang belum dikenali.
+- Tambahkan pencocokan urutan berbasis isi/kelanjutan untuk halaman tanpa footer.
+- Pertimbangkan model visi opsional hanya untuk kasus yang tetap ambigu setelah bukti deterministik; jangan bundel model ke installer.
 - Tampilkan pratinjau lengkap dan koreksi langsung.
 - Wajibkan persetujuan eksplisit untuk urutan akhir.
 

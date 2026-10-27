@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { inspectNumbering, sortByQuestionNumber, type NumberedPage } from "./domain/ordering";
+import { inspectNumbering, sortByQuestionNumber, sortBySourcePageNumber, type NumberedPage } from "./domain/ordering";
 
 interface NativeImageInfo {
   path: string;
@@ -23,6 +23,9 @@ interface OcrResult {
   confidence: number | null;
   evidence: string;
   candidates: NumberCandidate[];
+  source_page_number: number | null;
+  source_page_confidence: number | null;
+  source_page_evidence: string;
   engine: string;
 }
 interface PdfExportResult {
@@ -32,6 +35,7 @@ interface PdfExportResult {
 }
 type OcrState = "idle" | "processing" | "found" | "not-found" | "error";
 type NumberSource = "manual" | "ocr" | null;
+type SourcePageSource = "manual" | "ocr" | null;
 
 interface ImportedPage extends NumberedPage {
   file: File | null;
@@ -47,6 +51,10 @@ interface ImportedPage extends NumberedPage {
   ocrEvidence: string;
   candidates: NumberCandidate[];
   numberSource: NumberSource;
+  sourcePageNumber: number | null;
+  sourcePageConfidence: number | null;
+  sourcePageEvidence: string;
+  sourcePageSource: SourcePageSource;
 }
 
 const desktopMode = isTauri();
@@ -160,6 +168,10 @@ function addBrowserFiles(fileList: FileList | File[]): void {
       ocrEvidence: "",
       candidates: [],
       numberSource: null,
+      sourcePageNumber: null,
+      sourcePageConfidence: null,
+      sourcePageEvidence: "",
+      sourcePageSource: null,
     });
   }
 
@@ -202,6 +214,10 @@ async function addNativePaths(rawPaths: string[]): Promise<void> {
         ocrEvidence: "",
         candidates: [],
         numberSource: null,
+        sourcePageNumber: null,
+        sourcePageConfidence: null,
+        sourcePageEvidence: "",
+        sourcePageSource: null,
       });
       added += 1;
     } catch (error) {
@@ -281,6 +297,17 @@ function renderPage(page: ImportedPage, visualIndex: number): HTMLElement {
   card.draggable = true;
   card.dataset.pageId = page.id;
   const numberText = page.questionNumber === null ? "" : String(page.questionNumber);
+  const sourcePageText = page.sourcePageNumber === null ? "" : String(page.sourcePageNumber);
+  const sourcePageStatus = page.sourcePageNumber === null
+    ? "Belum terbaca"
+    : page.sourcePageSource === "manual" ? "Diisi manual" : "Terdeteksi dari footer";
+  const sourcePageStatusClass = page.sourcePageNumber === null
+    ? "is-empty"
+    : page.sourcePageSource === "manual" ? "is-set" : "is-ocr";
+  const sourcePageDetails = page.sourcePageEvidence
+    ? '<small class="page-sequence-evidence" title="' + escapeHtml(page.sourcePageEvidence) + '">Bukti footer: ' + escapeHtml(page.sourcePageEvidence) +
+      (page.sourcePageConfidence !== null ? ' · OCR ' + page.sourcePageConfidence.toFixed(0) + '%' : '') + '</small>'
+    : '';
   const isNumbered = page.questionNumber !== null;
   const safeName = escapeHtml(page.fileName);
   const safePreview = escapeHtml(page.previewUrl);
@@ -308,7 +335,13 @@ function renderPage(page: ImportedPage, visualIndex: number): HTMLElement {
     '<div class="image-card-body">' +
       '<div class="file-name" title="' + safeName + '">' + safeName + '</div>' +
       '<div class="file-meta">' + formatBytes(page.fileSize) + (page.width && page.height ? ' <span class="meta-dot">·</span> ' + page.width + ' × ' + page.height + ' px' : '') + '</div>' +
-      '<label class="number-field-label" for="question-' + page.id + '">Nomor soal</label>' +
+      '<label class="number-field-label" for="source-page-' + page.id + '">Nomor halaman cetak</label>' +
+      '<div class="number-field-row">' +
+        '<input id="source-page-' + page.id + '" class="number-input" type="number" min="1" max="9999" step="1" inputmode="numeric" placeholder="—" value="' + sourcePageText + '" aria-label="Nomor halaman tercetak untuk ' + safeName + '" />' +
+        '<span class="number-status ' + sourcePageStatusClass + '">' + sourcePageStatus + '</span>' +
+      '</div>' +
+      sourcePageDetails +
+      '<label class="number-field-label" for="question-' + page.id + '">Nomor soal (petunjuk)</label>' +
       '<div class="number-field-row">' +
         '<input id="question-' + page.id + '" class="number-input" type="number" min="1" max="9999" step="1" inputmode="numeric" placeholder="—" value="' + numberText + '" aria-label="Nomor soal untuk ' + safeName + '" />' +
         '<span class="number-status ' + statusClass + '">' + status + '</span>' +
@@ -329,6 +362,19 @@ function renderPage(page: ImportedPage, visualIndex: number): HTMLElement {
     page.questionNumber = Number.isInteger(parsed) && parsed >= 1 && parsed <= 9999 ? parsed : null;
     page.numberSource = page.questionNumber === null ? null : "manual";
     if (raw && page.questionNumber === null) showToast("Masukkan nomor bulat antara 1 dan 9.999.");
+    resetReviewConfirmation();
+    render();
+  });
+
+  const sourcePageInput = card.querySelector<HTMLInputElement>(".number-field-row #source-page-" + page.id)!;
+  sourcePageInput.addEventListener("change", () => {
+    const raw = sourcePageInput.value.trim();
+    const parsed = raw ? Number(raw) : Number.NaN;
+    page.sourcePageNumber = Number.isInteger(parsed) && parsed >= 1 && parsed <= 9999 ? parsed : null;
+    page.sourcePageSource = page.sourcePageNumber === null ? null : "manual";
+    page.sourcePageConfidence = null;
+    page.sourcePageEvidence = "";
+    if (raw && page.sourcePageNumber === null) showToast("Masukkan nomor halaman bulat antara 1 dan 9.999.");
     resetReviewConfirmation();
     render();
   });
@@ -387,29 +433,61 @@ function movePageTo(sourceId: string, targetId: string): void {
 }
 
 function renderNotice(): void {
-  const report = inspectNumbering(pages);
-  const messages: string[] = [];
-  if (report.unnumberedPageIds.length) messages.push(report.unnumberedPageIds.length + " gambar belum memiliki nomor soal.");
-  if (report.duplicateNumbers.length) messages.push("Nomor berulang: " + report.duplicateNumbers.join(", ") + ".");
-  if (report.missingNumbers.length) {
-    const shown = report.missingNumbers.slice(0, 8).join(", ");
-    messages.push("Kemungkinan nomor terlewat di antara nomor terkecil dan terbesar: " + shown +
-      (report.missingNumbers.length > 8 ? ", …" : "") + ". Pastikan apakah ini memang disengaja.");
+  const knownPageNumbers = pages
+    .map((page) => page.sourcePageNumber)
+    .filter((number): number is number => number !== null);
+  const pageCounts = new Map<number, number>();
+  for (const number of knownPageNumbers) pageCounts.set(number, (pageCounts.get(number) ?? 0) + 1);
+  const duplicatePageNumbers = [...pageCounts.entries()]
+    .filter(([, count]) => count > 1).map(([number]) => number).sort((a, b) => a - b);
+  const allPagesHaveNumbers = pages.length > 0 && knownPageNumbers.length === pages.length;
+  const missingPageNumbers: number[] = [];
+  if (allPagesHaveNumbers && knownPageNumbers.length > 1) {
+    const min = Math.min(...knownPageNumbers);
+    const max = Math.max(...knownPageNumbers);
+    for (let number = min; number <= max; number += 1) {
+      if (!pageCounts.has(number)) missingPageNumbers.push(number);
+      if (missingPageNumbers.length >= 100) break;
+    }
   }
-  if (isDetecting) messages.push("Deteksi nomor sedang berlangsung. Tunggu hingga semua gambar selesai diproses.");
 
+  const messages: string[] = [];
+  if (knownPageNumbers.length > 0) {
+    if (!allPagesHaveNumbers) {
+      messages.push("Nomor halaman tercetak terbaca pada " + knownPageNumbers.length + " dari " + pages.length + " gambar. Gambar lain perlu diposisikan manual.");
+    }
+    if (duplicatePageNumbers.length) messages.push("Nomor halaman tercetak berulang: " + duplicatePageNumbers.join(", ") + ". Periksa apakah ada halaman duplikat atau lebih dari satu dokumen.");
+    if (missingPageNumbers.length) {
+      const shown = missingPageNumbers.slice(0, 8).join(", ");
+      messages.push("Celah nomor halaman tercetak: " + shown + (missingPageNumbers.length > 8 ? ", …" : "") + ". Pastikan tidak ada halaman yang terlewat.");
+    }
+  } else {
+    const report = inspectNumbering(pages);
+    if (report.unnumberedPageIds.length) messages.push(report.unnumberedPageIds.length + " gambar belum memiliki nomor soal yang terbaca.");
+    if (report.duplicateNumbers.length) messages.push("Nomor soal berulang: " + report.duplicateNumbers.join(", ") + ". Nomor soal tidak selalu unik per foto.");
+    if (report.missingNumbers.length) {
+      const shown = report.missingNumbers.slice(0, 8).join(", ");
+      messages.push("Ada celah pada nomor soal: " + shown + (report.missingNumbers.length > 8 ? ", …" : "") + ". Ini petunjuk untuk ditinjau, bukan bukti bahwa gambar hilang.");
+    }
+  }
+  if (isDetecting) messages.push("Deteksi sedang berlangsung. Tunggu hingga semua gambar selesai diproses.");
+
+  if (!messages.length && allPagesHaveNumbers) {
+    reviewNotice.className = "review-notice is-positive";
+    reviewNotice.innerHTML = '<span class="notice-icon" aria-hidden="true">✓</span><div><strong>Urutan halaman tercetak terbaca</strong><p>Nomor halaman ditemukan pada semua gambar dan tidak ada celah atau duplikasi. Urutan ini lebih kuat daripada menyamakan nomor soal dengan urutan foto; tetap periksa pratinjau akhir.</p></div>';
+    return;
+  }
   if (!messages.length) {
     reviewNotice.className = "review-notice is-positive";
-    reviewNotice.innerHTML = '<span class="notice-icon" aria-hidden="true">✓</span><div><strong>Penomoran tampak konsisten</strong><p>Tetap periksa gambar dan urutan akhirnya. Nilai OCR dan pemeriksaan nomor bukan jaminan bahwa urutan sudah benar.</p></div>';
+    reviewNotice.innerHTML = '<span class="notice-icon" aria-hidden="true">✓</span><div><strong>Siap diperiksa</strong><p>Nomor soal adalah petunjuk isi, bukan jaminan urutan halaman. Periksa pratinjau dan urutan akhir sebelum menyimpan PDF.</p></div>';
     return;
   }
 
   reviewNotice.className = "review-notice is-attention";
   reviewNotice.innerHTML = '<span class="notice-icon" aria-hidden="true">!</span><div><strong>Perlu diperiksa</strong><p>' +
     messages.map(escapeHtml).join(" ") +
-    ' Celah nomor tidak selalu berarti ada gambar yang hilang.</p></div>';
+    ' Hasil pengenalan adalah petunjuk, bukan bukti urutan yang benar.</p></div>';
 }
-
 function render(): void {
   const hasPages = pages.length > 0;
   importPanel.hidden = hasPages;
@@ -417,17 +495,28 @@ function render(): void {
 
   if (hasPages) {
     const numberedCount = pages.filter((page) => page.questionNumber !== null).length;
+    const sourcePageCount = pages.filter((page) => page.sourcePageNumber !== null).length;
     bundleStats.innerHTML =
       '<span class="stat-chip"><strong>' + pages.length + '</strong> gambar</span>' +
       '<span class="stat-divider" aria-hidden="true"></span>' +
-      '<span class="stat-chip"><strong>' + numberedCount + '</strong> sudah bernomor</span>' +
+      '<span class="stat-chip"><strong>' + sourcePageCount + '</strong> halaman tercetak terbaca</span>' +
       '<span class="stat-divider" aria-hidden="true"></span>' +
-      '<span class="stat-chip"><strong>' + (pages.length - numberedCount) + '</strong> perlu diperiksa</span>';
+      '<span class="stat-chip"><strong>' + numberedCount + '</strong> nomor soal terbaca</span>';
 
     imageGrid.replaceChildren(...pages.map((page, index) => renderPage(page, index)));
     renderNotice();
   }
   updateExportState();
+}
+
+function sortByBestEvidence(): { kind: "page" | "question"; count: number } {
+  const sourcePageCount = pages.filter((page) => page.sourcePageNumber !== null).length;
+  if (sourcePageCount > 0) {
+    pages = sortBySourcePageNumber(pages);
+    return { kind: "page", count: sourcePageCount };
+  }
+  pages = sortByQuestionNumber(pages);
+  return { kind: "question", count: 0 };
 }
 
 async function detectNumbers(): Promise<void> {
@@ -442,28 +531,40 @@ async function detectNumbers(): Promise<void> {
   detectButton.textContent = "Sedang membaca…";
   detectButton.disabled = true;
   let completed = 0;
-  let detected = 0;
+  let detectedQuestions = 0;
+  let detectedSourcePages = 0;
   render();
 
   try {
     for (const page of pages) {
-      if (page.path && page.numberSource !== "manual") {
+      if (page.path && (page.numberSource !== "manual" || page.sourcePageSource !== "manual")) {
         page.ocrState = "processing";
         try {
           const result = await invoke<OcrResult>("detect_question_number", { path: page.path });
           page.candidates = result.candidates ?? [];
           page.ocrConfidence = result.confidence;
           page.ocrEvidence = result.evidence;
-          if (result.question_number !== null && result.question_number !== undefined) {
-            page.questionNumber = result.question_number;
-            page.numberSource = "ocr";
-            page.ocrState = "found";
-            detected += 1;
-          } else {
-            page.questionNumber = null;
-            page.numberSource = null;
-            page.ocrState = "not-found";
+
+          if (page.numberSource !== "manual") {
+            if (result.question_number !== null && result.question_number !== undefined) {
+              page.questionNumber = result.question_number;
+              page.numberSource = "ocr";
+            } else {
+              page.questionNumber = null;
+              page.numberSource = null;
+            }
           }
+
+          if (page.sourcePageSource !== "manual") {
+            page.sourcePageNumber = result.source_page_number ?? null;
+            page.sourcePageConfidence = result.source_page_confidence;
+            page.sourcePageEvidence = result.source_page_evidence ?? "";
+            page.sourcePageSource = page.sourcePageNumber === null ? null : "ocr";
+          }
+
+          if (result.question_number !== null && result.question_number !== undefined) detectedQuestions += 1;
+          if (result.source_page_number !== null && result.source_page_number !== undefined) detectedSourcePages += 1;
+          page.ocrState = page.questionNumber !== null || page.sourcePageNumber !== null ? "found" : "not-found";
         } catch (error) {
           page.ocrState = "error";
           page.ocrEvidence = String(error);
@@ -471,16 +572,22 @@ async function detectNumbers(): Promise<void> {
       }
 
       completed += 1;
-      // Avoid rebuilding the entire grid after every image in large bundles.
       if (completed % 5 === 0 || completed === pages.length) {
         render();
         showToast("Membaca gambar " + completed + " dari " + pages.length + "…", 1500);
       }
     }
 
-    pages = sortByQuestionNumber(pages);
+    const sorting = sortByBestEvidence();
     render();
-    showToast("Deteksi selesai: " + detected + " dari " + pages.length + " gambar memiliki kandidat nomor. Periksa hasilnya satu per satu.", 6000);
+    const sortSummary = sorting.kind === "page"
+      ? "Diurutkan berdasarkan nomor halaman tercetak pada " + sorting.count + "/" + pages.length + " gambar; sisanya di akhir untuk ditinjau."
+      : "Footer halaman tidak terbaca; urutan sementara memakai nomor soal dan perlu diperiksa manual.";
+    showToast(
+      "Deteksi selesai: " + detectedQuestions + "/" + pages.length + " nomor soal dan " +
+      detectedSourcePages + "/" + pages.length + " nomor halaman tercetak terbaca. " + sortSummary,
+      8500,
+    );
   } finally {
     isDetecting = false;
     detectButton.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8.5 3.5H4.2c-.4 0-.7.3-.7.7v4.3m8-5h4.3c.4 0 .7.3.7.7v4.3m-5 8h4.3c.4 0 .7-.3.7-.7v-4.3m-8 5H4.2c-.4 0-.7-.3-.7-.7v-4.3M6.5 7.5h7v5h-7z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Deteksi nomor otomatis';
@@ -488,7 +595,6 @@ async function detectNumbers(): Promise<void> {
     render();
   }
 }
-
 async function exportPdf(): Promise<void> {
   if (!desktopMode) {
     showToast("Simpan PDF tersedia setelah aplikasi desktop terpasang.");
@@ -533,10 +639,14 @@ fileInput.addEventListener("change", () => {
 });
 
 sortButton.addEventListener("click", () => {
-  pages = sortByQuestionNumber(pages);
+  const sorting = sortByBestEvidence();
   resetReviewConfirmation();
   render();
-  showToast("Gambar diurutkan menurut nomor yang terisi. Periksa nomor berulang dan kesinambungan soal.");
+  if (sorting.kind === "page") {
+    showToast("Diurutkan berdasarkan nomor halaman tercetak pada " + sorting.count + "/" + pages.length + " gambar. Nomor soal tidak dipakai sebagai nomor halaman.");
+  } else {
+    showToast("Nomor halaman tercetak belum terbaca. Urutan sementara berdasarkan nomor soal; periksa dan susun halaman yang berlanjut secara manual.", 6500);
+  }
 });
 detectButton.addEventListener("click", () => { void detectNumbers(); });
 exportButton.addEventListener("click", () => { void exportPdf(); });

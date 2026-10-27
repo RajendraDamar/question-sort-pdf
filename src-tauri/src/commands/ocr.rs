@@ -17,6 +17,9 @@ pub struct OcrResult {
     pub confidence: Option<f32>,
     pub evidence: String,
     pub candidates: Vec<NumberCandidate>,
+    pub source_page_number: Option<u32>,
+    pub source_page_confidence: Option<f32>,
+    pub source_page_evidence: String,
     pub engine: String,
 }
 
@@ -265,6 +268,114 @@ fn tsv_candidates(tsv: &str) -> Vec<NumberCandidate> {
     candidates
 }
 
+/// Extract the printed source-page number from a footer, independently of
+/// question numbers in the body. Many exam pages use a footer such as
+/// "Matematika | 7"; the question-only detector discarded it because the line
+/// is near the right edge of the page.
+fn tsv_source_page_number(tsv: &str) -> Option<NumberCandidate> {
+    let mut page_width = 0_u32;
+    let mut page_height = 0_u32;
+    let mut lines: BTreeMap<(u32, u32, u32, u32), Vec<OcrWord>> = BTreeMap::new();
+
+    for row in tsv.lines().skip(1) {
+        let columns: Vec<&str> = row.splitn(12, '\t').collect();
+        if columns.len() < 12 {
+            continue;
+        }
+        let level = columns[0].parse::<u8>().unwrap_or_default();
+        if level == 1 {
+            page_width = columns[8].parse().unwrap_or_default();
+            page_height = columns[9].parse().unwrap_or_default();
+            continue;
+        }
+        if level != 5 || page_width == 0 || page_height == 0 {
+            continue;
+        }
+
+        let text = columns[11].trim();
+        if text.is_empty() {
+            continue;
+        }
+        let key = (
+            columns[1].parse().unwrap_or_default(),
+            columns[2].parse().unwrap_or_default(),
+            columns[3].parse().unwrap_or_default(),
+            columns[4].parse().unwrap_or_default(),
+        );
+        lines.entry(key).or_default().push(OcrWord {
+            text: text.to_string(),
+            left: columns[6].parse().unwrap_or_default(),
+            top: columns[7].parse().unwrap_or_default(),
+            confidence: columns[10].parse().unwrap_or(0.0_f32).clamp(0.0, 100.0),
+        });
+    }
+
+    if page_width == 0 || page_height == 0 {
+        return None;
+    }
+
+    let mut candidates = Vec::new();
+    for (_, mut words) in lines {
+        words.sort_by_key(|word| word.left);
+        let Some(first) = words.first() else { continue };
+        let left_ratio = first.left as f32 / page_width as f32;
+        let top_ratio = first.top as f32 / page_height as f32;
+
+        // A footer candidate must be low on the page and on its right half.
+        if top_ratio < 0.88 || left_ratio < 0.50 {
+            continue;
+        }
+
+        let evidence = words
+            .iter()
+            .take(12)
+            .map(|word| word.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let has_footer_marker = words.iter().any(|word| word.text.trim() == "|") || {
+            let lower = evidence.to_ascii_lowercase();
+            ["halaman", "page", "lembar"]
+                .iter()
+                .any(|marker| lower.contains(marker))
+        };
+        if !has_footer_marker {
+            continue;
+        }
+
+        let Some((number, confidence)) = words.iter().rev().find_map(|word| {
+            let digits = word
+                .text
+                .trim_matches(|character: char| !character.is_ascii_digit());
+            if digits.is_empty() || !digits.chars().all(|character| character.is_ascii_digit()) {
+                return None;
+            }
+            let value = digits.parse::<u32>().ok()?;
+            (1..=9999)
+                .contains(&value)
+                .then_some((value, word.confidence))
+        }) else {
+            continue;
+        };
+
+        candidates.push(NumberCandidate {
+            number,
+            confidence,
+            evidence,
+            top_ratio,
+            left_ratio,
+        });
+    }
+
+    // Prefer the footer closest to the bottom-right corner, then confidence.
+    candidates.sort_by(|a, b| {
+        b.top_ratio
+            .total_cmp(&a.top_ratio)
+            .then_with(|| b.left_ratio.total_cmp(&a.left_ratio))
+            .then_with(|| b.confidence.total_cmp(&a.confidence))
+    });
+    candidates.into_iter().next()
+}
+
 fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
     let path = validate_image_path(&path)?;
     let _dimensions = checked_dimensions(&path)?;
@@ -293,6 +404,7 @@ fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
     let tsv = String::from_utf8_lossy(&result.stdout);
     let candidates = tsv_candidates(&tsv);
     let primary = candidates.first();
+    let source_page = tsv_source_page_number(&tsv);
 
     Ok(OcrResult {
         question_number: primary.map(|candidate| candidate.number),
@@ -301,7 +413,12 @@ fn detect_question_number_inner(path: String) -> Result<OcrResult, String> {
             .map(|candidate| candidate.evidence.clone())
             .unwrap_or_default(),
         candidates,
-        engine: "Tesseract OCR (Indonesia + Inggris)".to_string(),
+        source_page_number: source_page.as_ref().map(|candidate| candidate.number),
+        source_page_confidence: source_page.as_ref().map(|candidate| candidate.confidence),
+        source_page_evidence: source_page
+            .map(|candidate| candidate.evidence)
+            .unwrap_or_default(),
+        engine: "Tesseract OCR (Indonesia + Inggris; nomor soal dan footer halaman)".to_string(),
     })
 }
 
@@ -314,7 +431,9 @@ pub async fn detect_question_number(path: String) -> Result<OcrResult, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_question_number_inner, number_prefix, tsv_candidates};
+    use super::{
+        detect_question_number_inner, number_prefix, tsv_candidates, tsv_source_page_number,
+    };
     use std::{path::Path, process::Command};
 
     #[test]
@@ -380,6 +499,32 @@ mod tests {
             Some(7)
         );
         assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn reads_a_printed_page_number_from_a_right_side_footer() {
+        let tsv = concat!(
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n",
+            "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n",
+            "5\t1\t4\t1\t1\t1\t100\t260\t20\t24\t94.0\t8.\n",
+            "5\t1\t41\t1\t1\t1\t700\t1390\t107\t16\t90.0\tMatematika\n",
+            "5\t1\t41\t1\t1\t2\t925\t1390\t2\t20\t87.5\t|\n",
+            "5\t1\t41\t1\t1\t3\t967\t1388\t7\t19\t91.0\t17\n",
+        );
+        let candidate = tsv_source_page_number(tsv).expect("the footer should be recognized");
+        assert_eq!(candidate.number, 17);
+        assert!(candidate.evidence.contains("Matematika"));
+    }
+
+    #[test]
+    fn does_not_treat_a_body_question_number_as_a_page_footer() {
+        let tsv = concat!(
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n",
+            "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t\n",
+            "5\t1\t4\t1\t1\t1\t100\t260\t20\t24\t94.0\t8.\n",
+            "5\t1\t4\t1\t1\t2\t130\t260\t75\t24\t90.0\tDiketahui\n",
+        );
+        assert!(tsv_source_page_number(tsv).is_none());
     }
 
     #[test]
